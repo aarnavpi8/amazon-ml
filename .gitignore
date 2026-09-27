@@ -1,0 +1,15 @@
+# Challenge data and competition documents (large, and not ours to redistribute)
+dataset/
+*.pdf
+
+# Generated artefacts (tens of GB; rebuilt by the pipeline)
+output/
+code/business_entity_resolution/work/
+
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+__MACOSX/
