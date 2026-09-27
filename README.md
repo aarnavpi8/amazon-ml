@@ -22,7 +22,10 @@ raw TSVs ──► normalise ──► infer states ──► blocking ──►
 | v1 | tuned rule on blocking similarities | 0.750 | – |
 | v2 | LightGBM, 40 features | 0.9695 | 0.957 |
 | v3 (`main`) | + house-number / street features, decision tuned at test decoy density | 0.9725* | – |
-| **v4** (this branch) | + city → state inference (fixes 35% of French records having no state) | pending | – |
+| **v4** (this branch) | + city → state inference (fixes 35% of French records having no state) | 0.9725*† | – |
+
+† Validation covers only the US and India, where state inference changes almost nothing, so v4
+matches v3 there. Its intended gain is on the French records, which only the leaderboard can measure.
 
 \* at test-like decoy density (see [How the decision is tuned](#6-decision-rule-and-tuning)).
 
