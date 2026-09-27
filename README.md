@@ -13,12 +13,16 @@ raw TSVs ──► normalise ──► infer states ──► blocking ──►
              Indian scripts) S1)                             features)                        if confident enough)
 ```
 
+> **Branches:** this is the **`v4`** branch — the v3 pipeline plus a city → state inference
+> stage (`src/infer_state.py`). The v3 pipeline is on
+> [`main`](https://github.com/aarnavpi8/amazon-ml/tree/main).
+
 | Version | What changed | Validation F0.5 | Leaderboard |
 |---|---|---|---|
 | v1 | tuned rule on blocking similarities | 0.750 | – |
 | v2 | LightGBM, 40 features | 0.9695 | 0.957 |
-| v3 | + house-number / street features, decision tuned at test decoy density | 0.9725* | – |
-| v4 | + city → state inference (fixes 35% of French records having no state) | pending | – |
+| v3 (`main`) | + house-number / street features, decision tuned at test decoy density | 0.9725* | – |
+| **v4** (this branch) | + city → state inference (fixes 35% of French records having no state) | pending | – |
 
 \* at test-like decoy density (see [How the decision is tuned](#6-decision-rule-and-tuning)).
 
