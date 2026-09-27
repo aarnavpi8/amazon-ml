@@ -7,20 +7,24 @@ Source 1 record. Scored with **macro F0.5** (precision counts twice as much as r
 The solution is a classic entity-resolution pipeline, built for ~23 million records on a laptop:
 
 ```
-raw TSVs ──► normalise ──► infer states ──► blocking ──► pair features ──► LightGBM ──► decision rule ──► TSV outputs
-            (clean text,    (city → state   (TF-IDF top-k   (~50 similarity   (pair         (each S2/S3 record
-             transliterate   learned from    per state)      & agreement       probability)  goes to its best S1,
-             Indian scripts) S1)                             features)                        if confident enough)
+raw TSVs ──► normalise ──► blocking ──► pair features ──► LightGBM ──► decision rule ──► TSV outputs
+            (clean text,    (TF-IDF top-k   (~50 similarity   (pair         (each S2/S3 record
+             transliterate   per state)      & agreement       probability)  goes to its best S1,
+             Indian scripts)                 features)                        if confident enough)
 ```
+
+> **Branches:** `main` (this branch) is the **v3** pipeline. The **v4** pipeline, which adds a
+> city → state inference stage, lives on the [`v4`](https://github.com/aarnavpi8/amazon-ml/tree/v4)
+> branch (`git checkout v4`) with its own README.
 
 | Version | What changed | Validation F0.5 | Leaderboard |
 |---|---|---|---|
 | v1 | tuned rule on blocking similarities | 0.750 | – |
 | v2 | LightGBM, 40 features | 0.9695 | 0.957 |
-| v3 | + house-number / street features, decision tuned at test decoy density | 0.9725* | – |
-| v4 | + city → state inference (fixes 35% of French records having no state) | pending | – |
+| **v3** (`main`) | + house-number / street features, decision tuned at test decoy density | 0.9725* | – |
+| v4 (branch `v4`) | + city → state inference (fixes 35% of French records having no state) | see `v4` | – |
 
-\* at test-like decoy density (see [How the decision is tuned](#6-decision-rule-and-tuning)).
+\* at test-like decoy density (see [How the decision is tuned](#5-decision-rule-and-tuning)).
 
 ---
 
@@ -73,8 +77,7 @@ amazon-ml/                               <- repository root
 │       │   ├── text_maps.py             <- legal forms, abbreviations, state/region tables
 │       │   ├── translit.py              <- Indian scripts -> Latin (mined dictionary + rules)
 │       │   ├── normalize.py             <- stage 1: clean names and addresses
-│       │   ├── infer_state.py           <- stage 2: fill missing states from city names
-│       │   ├── block.py                 <- stage 3: candidate generation (blocking)
+│       │   ├── block.py                 <- stages 2-3: candidate generation (blocking)
 │       │   ├── features.py              <- pair features used by the model
 │       │   ├── train.py                 <- stage 4: train LightGBM
 │       │   ├── tune.py                  <- stage 5: tune the decision rule
@@ -159,7 +162,7 @@ With the virtual environment active, from the repository root:
 bash code/business_entity_resolution/run_pipeline.sh
 ```
 
-That runs all 7 stages and ends with `output/matching_results.tsv` and
+That runs all 6 stages and ends with `output/matching_results.tsv` and
 `output/candidate_pairs.tsv`. Progress is printed for every stage.
 
 If `python` on your PATH is not the virtual-environment one, pass it explicitly (use an
@@ -182,12 +185,11 @@ cd code/business_entity_resolution
 | # | Command | What it does | Writes | Time* |
 |---|---|---|---|---|
 | 1 | `python -m src.normalize` | Cleans names (legal forms, honorifics, d/b/a, domains, injected IDs), transliterates Indian scripts, parses addresses (abbreviations, states, house numbers). Mines the Indic → Latin dictionary from training pairs first. | `work/translit_dict.json`, `work/norm/*.parquet` | ~3.5 min |
-| 2 | `python -m src.infer_state` | Learns a city → state table from Source 1 and fills in missing states (mainly French addresses that end with only a city). Updates `work/norm/` in place. | `work/norm/*.parquet` | ~2 min |
-| 3 | `python -m src.block --split train --force` | Candidate generation for the training split (used to train and evaluate the model). | `work/cand/train/<country>.parquet` | ~17 min |
-| 4 | `python -m src.block --split test --force` | Candidate generation for the test split. | `work/cand/test/<country>.parquet` | ~12 min |
-| 5 | `python -m src.train --rebuild` | Builds pair features for a 20% sample of training entities, trains LightGBM (1500 rounds), saves validation scores. | `work/feat_train.parquet`, `work/model/lgbm.txt`, `work/model/scored_valid.parquet`, `work/model/decision.json` | ~22 min |
-| 6 | `python -m src.tune` | Tunes the decision threshold and margin at the test set's decoy density. | updates `work/model/decision.json` | ~3 min |
-| 7 | `python -m src.predict` | Builds features for all test candidates, scores them, applies the decision rule, writes both TSVs. | `output/*.tsv`, `work/model/scored_test/*.parquet` | ~10 min |
+| 2 | `python -m src.block --split train --force` | Candidate generation for the training split (used to train and evaluate the model). | `work/cand/train/<country>.parquet` | ~15 min |
+| 3 | `python -m src.block --split test --force` | Candidate generation for the test split. | `work/cand/test/<country>.parquet` | ~12 min |
+| 4 | `python -m src.train --rebuild` | Builds pair features for a 20% sample of training entities, trains LightGBM (1500 rounds), saves validation scores. | `work/feat_train.parquet`, `work/model/lgbm.txt`, `work/model/scored_valid.parquet`, `work/model/decision.json` | ~22 min |
+| 5 | `python -m src.tune` | Tunes the decision threshold and margin at the test set's decoy density. | updates `work/model/decision.json` | ~3 min |
+| 6 | `python -m src.predict` | Builds features for all test candidates, scores them, applies the decision rule, writes both TSVs. | `output/*.tsv`, `work/model/scored_test/*.parquet` | ~10 min |
 
 \* measured on a 20-thread laptop CPU with 24 GB RAM.
 
@@ -255,7 +257,7 @@ os.environ["ER_OUTPUT_DIR"] = "/content/drive/MyDrive/er_output"               #
 Colab notes:
 
 - **Run it as a script (above), not as notebook cells** — long cells are what get killed.
-- **Memory:** standard Colab has ~12 GB RAM. Stages 1–4, 6 and 7 fit. Training (stage 5) uses a
+- **Memory:** standard Colab has ~12 GB RAM. Stages 1–3, 5 and 6 fit. Training (stage 4) uses a
   20% entity sample; if it runs out of memory, lower `SAMPLE_PCT` in `src/train.py` from 20 to 10
   (validation stays at 5%). Colab High-RAM runtimes need no change.
 - **Disconnects:** blocking resumes per country if you rerun `src.block` *without* `--force`.
@@ -301,13 +303,7 @@ The EDA (`eda.ipynb`) showed the noise the generator injects; each step targets 
   (`Rd` → road; in France `R.` → rue, `St` → saint), state names canonicalised (TX ↔ Texas,
   MH ↔ Maharashtra ↔ महाराष्ट्र, Nord → Hauts-de-France), house number and all numbers extracted.
 
-### 2. State inference (`infer_state.py`)
-
-35% of French S2/S3 addresses end with just a city. A **city → state table is learned from
-Source 1** (which always has `…, city, state`), and missing states are filled in from it.
-French records without a state: 34.9% → 3.1%.
-
-### 3. Blocking (`block.py`)
+### 2. Blocking (`block.py`)
 
 Each S2/S3 record ("query") retrieves likely S1 records **within its own country**:
 
@@ -322,7 +318,7 @@ each, records with no state search the whole country. Telangana and Andhra Prade
 `name_cos + addr_cos` and keeps 6; the union is capped at `CANDIDATE_K` per query.
 On the full training set: **97.9% pair recall, 23 candidates per S1, best reachable F0.5 0.993**.
 
-### 4. Pair features (`features.py`) — ~50 per pair, none country-specific
+### 3. Pair features (`features.py`) — ~50 per pair, none country-specific
 
 - blocking cosines and which pass found the pair;
 - context: rank and score gap of the pair within its query's candidates and within its S1's;
@@ -336,14 +332,14 @@ The house-number features target how the generator makes **decoys** (same busine
 nearby number: `7265` vs `7269`) versus how it adds **noise** to true matches (dropped digits:
 `118` → `11`).
 
-### 5. Model (`train.py`)
+### 4. Model (`train.py`)
 
 LightGBM binary classifier (MIT licence, far below the 8B-parameter limit). Training rows are the
 blocking candidates of a 20% hash-sample of training S1 entities (≈32M pairs, 14.5% positive);
 5% of entities are held out for validation. Country is never a feature, so France (absent from
 training) is scored by the same model.
 
-### 6. Decision rule and tuning (`decision.py`, `tune.py`)
+### 5. Decision rule and tuning (`decision.py`, `tune.py`)
 
 Every S2/S3 record belongs to at most one S1 (verified on the ground truth). So each record is
 assigned to its **highest-probability S1** only if the probability ≥ `t` and it beats the
@@ -379,8 +375,7 @@ repository; run all cells to regenerate them (~1.5 min, needs `matplotlib` and `
 ## Rules compliance
 
 - **No external data or services.** Everything is learned from the provided files: the
-  transliteration dictionary and the city → state table come from the training / Source 1
-  records. The small static tables in `text_maps.py` are general conventions (street-type
+  transliteration dictionary comes from the training records. The small static tables in `text_maps.py` are general conventions (street-type
   abbreviations, legal-form spellings, state codes such as TX = Texas, and the regions of the 4
   French départements that appear in the data) — no geocoding, registry or API lookups.
 - **Country is an open set.** Countries without specific rules fall back to the default ones,

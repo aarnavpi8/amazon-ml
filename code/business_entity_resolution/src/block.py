@@ -34,7 +34,7 @@ NAME_MIN_COS, ADDR_MIN_COS = 0.3, 0.3
 MAX_DF = 0.02            # drop char 3-grams present in >2% of S1 records (4x faster)
 EXACT_MAX_S1 = 3         # exact keys shared by more S1 records than this are too generic
 KEEP_PER_QUERY = 15      # stored per query; the model-facing K is chosen later
-COLS = ["entity_id", "country", "name_core", "name_nospace", "addr_norm", "addr_state"]
+COLS = ["entity_id", "country", "name_core", "name_nospace", "addr_norm"]
 
 
 def load_split(work_dir, split):
@@ -52,10 +52,8 @@ def prepare(df, country):
     canon = sorted(set(STATE_MAPS.get(country, {}).values()))
     aliases = BLOCK_STATE_ALIASES.get(country, {})
     segs = pl.col("addr_norm").str.split(", ")
-    # States named in the address, plus addr_state (which may be inferred from the city).
-    named = segs.list.eval(pl.element().filter(pl.element().is_in(canon)))
     return df.with_row_index("idx").with_columns(
-        states=pl.concat_list(named, pl.col("addr_state")).list.drop_nulls()
+        states=segs.list.eval(pl.element().filter(pl.element().is_in(canon)))
         .list.eval(pl.element().replace(aliases)).list.unique(),
         addr_text=segs.list.eval(pl.element().filter(~pl.element().is_in(canon))).list.join(", "),
     ).with_columns(
